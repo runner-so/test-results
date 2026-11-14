@@ -1,0 +1,36 @@
+# runner-so/test-results (RUN-517): published from this folder as its own
+# repo. It copies the JUnit XML files its paths name to where the control
+# plane reads them as the job completes (/tmp/runner-test-results), for
+# reports Test Analytics does not find by itself. Nothing leaves the VM here
+# and no credential enters the job. The control plane, not this action,
+# skips files over 4 MiB, past the 50th, or not JUnit.
+name: Test results
+description: Hand JUnit XML files to runner's Test Analytics, for files not found by their usual names.
+inputs:
+  path:
+    description: Files or globs (** allowed), one per line, relative to the workspace if not absolute.
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        RESULT_PATHS: ${{ inputs.path }}
+      run: |
+        set -euo pipefail
+        shopt -s globstar nullglob
+        dir=/tmp/runner-test-results
+        mkdir -p "$dir"
+        cd "$GITHUB_WORKSPACE"
+        n=$(find "$dir" -maxdepth 1 -type f | wc -l)
+        while IFS= read -r pattern; do
+          [ -n "$pattern" ] || continue
+          # Globs expand; a path with spaces stays one word (IFS empty).
+          IFS= ; for f in $pattern; do
+            [ -f "$f" ] || continue
+            n=$((n + 1))
+            cp -- "$f" "$dir/$n-$(basename -- "$f")"
+          done
+          unset IFS
+        done <<< "$RESULT_PATHS"
+        echo "Test results: $n file(s) for runner's Test Analytics"
